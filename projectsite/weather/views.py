@@ -1,6 +1,7 @@
 import os
 import requests
-from django.http import Http404, HttpResponse
+from django.core.cache import cache
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 
 TILE_LAYERS = {"precipitation_new", "clouds_new", "wind_new", "temp_new", "pressure_new"}
@@ -87,3 +88,47 @@ def weather_tile(request, layer, z, x, y):
     resp = HttpResponse(r.content, content_type="image/png")
     resp["Cache-Control"] = "public, max-age=600"
     return resp
+
+def point_api(request):
+    """5-day / 3-hour forecast for any map point (OpenWeather free plan)."""
+    try:
+        lat = round(float(request.GET["lat"]), 2)
+        lon = round(float(request.GET["lon"]), 2)
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ValueError
+    except (KeyError, ValueError):
+        return JsonResponse({"error": "bad coordinates"}, status=400)
+
+    cache_key = f"point:{lat}:{lon}"
+    data = cache.get(cache_key)
+    if data is None:
+        try:
+            r = requests.get(
+                "https://api.openweathermap.org/data/2.5/forecast",
+                params={"lat": lat, "lon": lon, "appid": os.getenv("OPENWEATHER_API_KEY"), "units": "metric"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            raw = r.json()
+        except (requests.exceptions.RequestException, ValueError):
+            return JsonResponse({"error": "forecast unavailable"}, status=502)
+
+        slots = []
+        for item in raw.get("list", []):
+            w = item["weather"][0]
+            slots.append({
+                "dt": item["dt"],
+                "temp": round(item["main"]["temp"]),
+                "pressure": item["main"].get("pressure", 0),
+                "wind_kmh": round(item.get("wind", {}).get("speed", 0) * 3.6),
+                "wind_deg": round(item.get("wind", {}).get("deg", 0)),
+                "clouds": item.get("clouds", {}).get("all", 0),
+                "pop": round(item.get("pop", 0) * 100),
+                "mm": round(item.get("rain", {}).get("3h", 0) + item.get("snow", {}).get("3h", 0), 1),
+                "desc": w["description"].title(),
+                "icon": w["icon"],
+            })
+        city = raw.get("city", {})
+        data = {"name": city.get("name", ""), "country": city.get("country", ""), "slots": slots}
+        cache.set(cache_key, data, 600)
+    return JsonResponse(data)

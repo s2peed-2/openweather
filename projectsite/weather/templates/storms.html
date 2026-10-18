@@ -1,36 +1,117 @@
 {% extends "base.html" %}
 
-{% block title %}Storm Map{% endblock %}
+{% block title %}Storm Map | CyPulse{% endblock %}
 {% block body_class %}storm{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
+  main { max-width: 1200px; }
   h1 { margin: 0 0 6px; font-size: 2.2em; }
   .live { display: inline-flex; align-items: center; gap: 8px; padding: 4px 14px; border-radius: 999px;
     background: rgba(255,46,99,.25); border: 1px solid rgba(255,46,99,.6); font-size: .8em; font-weight: 600; }
   .live i { width: 9px; height: 9px; border-radius: 50%; background: #ff2e63; animation: ping 1.4s infinite; }
   @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(255,46,99,.8); } 100% { box-shadow: 0 0 0 12px rgba(255,46,99,0); } }
-  .note { opacity: .9; font-size: .95em; margin: 10px 0 0; }
-  .jump { margin: 16px 0 4px; }
+  .jump { margin: 14px 0 4px; }
   .jump button { padding: 8px 18px; font-size: .9em; margin: 3px; }
-  #map { height: 68vh; border-radius: 22px; margin-top: 14px; border: 2px solid var(--line);
-    box-shadow: 0 14px 40px rgba(0,0,0,.35); }
-  .leaflet-control-layers { border-radius: 14px; padding: 6px 10px; font-family: inherit; }
-  .legend { background: rgba(20,10,45,.88); color: #fff; padding: 12px 14px; border-radius: 14px; font-size: .8em;
-    line-height: 1.6; min-width: 200px; border: 1px solid rgba(255,255,255,.25); text-align: left; text-shadow: none; }
-  .legend h4 { margin: 0 0 6px; font-size: 1.05em; }
-  .legend .row { display: flex; align-items: center; gap: 8px; }
-  .legend i { width: 22px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,.4); flex: none; }
-  .legend small { display: block; opacity: .7; margin-top: 6px; }
+
+  /* ---------- map area ---------- */
+  .mapwrap { position: relative; margin-top: 12px; border-radius: 22px; overflow: hidden;
+    border: 2px solid var(--line); box-shadow: 0 14px 40px rgba(0,0,0,.35); }
+  #map { height: 74vh; min-height: 470px; background: #1b1b2f; }
+  .topbar { position: absolute; z-index: 1100; top: 12px; left: 12px; pointer-events: none; }
+  .readout { pointer-events: auto; background: rgba(25,20,45,.9); padding: 8px 18px; border-radius: 14px;
+    text-align: left; text-shadow: none; border: 1px solid rgba(255,255,255,.2); }
+  .readout small { display: block; opacity: .7; font-size: .7em; letter-spacing: .6px; text-transform: uppercase; }
+  .readout strong { font-size: 1.35em; }
+  .fab { position: absolute; z-index: 1101; right: 16px; bottom: 86px; width: 58px; height: 58px; border-radius: 50%;
+    border: none; cursor: pointer; background: linear-gradient(135deg, #ff7a18, #ff2e63); color: #fff; font-size: 1.5em;
+    display: grid; place-items: center; box-shadow: 0 8px 22px rgba(255,46,99,.55); padding: 0; }
+  .scale { position: absolute; z-index: 1100; left: 0; right: 0; bottom: 0; padding: 8px 16px 10px;
+    background: rgba(25,20,45,.92); text-shadow: none; text-align: left; }
+  .scale .unit { font-size: .75em; opacity: .85; margin-bottom: 4px; }
+  .scale .bar { height: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.3); }
+  .scale .ticks { display: flex; justify-content: space-between; font-size: .75em; margin-top: 4px; }
+
+  /* ---------- layer panel ---------- */
+  .panel { position: absolute; z-index: 1102; top: 0; right: 0; bottom: 0; width: min(360px, 92%);
+    background: rgba(28,22,52,.97); transform: translateX(105%); transition: transform .3s;
+    overflow-y: auto; padding: 16px; text-align: left; text-shadow: none; }
+  .panel.open { transform: none; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.2em; margin-bottom: 6px; }
+  .panel-head .x { cursor: pointer; font-size: 1.6em; line-height: 1; padding: 0 8px; }
+  .panel h3 { margin: 16px 0 8px; font-size: .8em; letter-spacing: 1px; text-transform: uppercase; opacity: .7; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tile { cursor: pointer; text-align: center; font-size: .8em; }
+  .tile .thumb { position: relative; height: 66px; border-radius: 14px; display: grid; place-items: center;
+    font-size: 1.8em; border: 2px solid rgba(255,255,255,.15); transition: transform .2s; }
+  .tile:hover .thumb { transform: translateY(-3px); }
+  .tile.on .thumb { border-color: #ffd166; box-shadow: 0 0 0 2px #ffd166; }
+  .tile.on .lbl { color: #ffd166; font-weight: 600; }
+  .tile .lbl { display: block; margin-top: 5px; }
+  .tile .count { position: absolute; top: -8px; left: -6px; background: #d90429; color: #fff; font-size: .45em;
+    font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+  .t-wind  { background: linear-gradient(135deg, #3b6fd1, #2fb36a, #e8d34a, #d4534b); }
+  .t-rain  { background: linear-gradient(135deg, #7f7fd5, #4a4ae0, #1414ff); }
+  .t-clouds { background: linear-gradient(135deg, #6b7a8f, #e8edf3); }
+  .t-temp  { background: linear-gradient(135deg, #8257db, #208cec, #23dddd, #c2ff28, #fff028, #fc8014); }
+  .t-press { background: linear-gradient(135deg, #0073ff, #8de7c7, #f0b800, #c60000); }
+  .t-none  { background: #2b2b3d; }
+  .t-storm { background: linear-gradient(135deg, #2d0a5e, #c2185b); }
+  .t-plain { background: linear-gradient(135deg, #cfcfcf, #fafafa); }
+  .t-street { background: linear-gradient(135deg, #f2efe9, #a8d3e6); }
+  .t-sat   { background: linear-gradient(135deg, #1f3b2a, #4d6b45, #2a4a63); }
+  .t-dark  { background: linear-gradient(135deg, #1d1d1d, #4a4a4a); }
+
+  /* ---------- storm labels ---------- */
+  .storm-icon { background: none; border: none; }
+  .storm-pin { display: inline-flex; align-items: center; gap: 6px; transform: translate(-14px, -14px);
+    white-space: nowrap; padding: 3px 12px 3px 4px; border-radius: 999px; color: #fff; font: 700 12px Poppins, Arial, sans-serif;
+    text-transform: uppercase; letter-spacing: .5px; text-shadow: none; box-shadow: 0 4px 14px rgba(0,0,0,.5); }
+  .storm-pin .eye { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(0,0,0,.35); font-size: 15px; animation: spin 4s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .storm-pin.lvl-red { background: #d90429; } .storm-pin.lvl-orange { background: #f77f00; } .storm-pin.lvl-green { background: #2a9d8f; }
+
+  /* ---------- timeline card ---------- */
+  .tl { text-align: left; }
+  .tl-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .tl-head button { padding: 12px 20px; font-size: 1.1em; }
+  .tl-head small { opacity: .85; }
+  .tl input[type=range] { width: 100%; accent-color: #ff2e63; }
+  .strip { position: relative; display: flex; gap: 6px; overflow-x: auto; padding: 10px 2px 8px; }
+  .cell { flex: none; width: 58px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px;
+    border-radius: 12px; background: rgba(255,255,255,.1); cursor: pointer; font-size: .78em; border: 2px solid transparent; }
+  .cell small { display: block; min-height: 1.2em; opacity: .8; font-size: .85em; }
+  .cell img { width: 36px; height: 36px; }
+  .cell .barwrap { height: 44px; width: 14px; border-radius: 7px; background: rgba(255,255,255,.14);
+    display: flex; align-items: flex-end; overflow: hidden; }
+  .cell .barwrap i { display: block; width: 100%; background: #4cc9f0; }
+  .cell.wet { background: rgba(76,201,240,.22); }
+  .cell.sel { border-color: #ffd166; background: rgba(255,209,102,.25); }
+  .detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 10px 0; }
+  .st { background: rgba(255,255,255,.14); border-radius: 14px; padding: 10px 12px; }
+  .st small { display: block; opacity: .75; }
+  .hint { opacity: .75; display: block; }
+
+  .storm-list h2 { margin: 0 0 10px; font-size: 1.3em; }
+  .storm-item { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; margin-top: 8px;
+    border-radius: 14px; background: rgba(255,255,255,.14); cursor: pointer; transition: transform .2s, background .2s; }
+  .storm-item:hover { transform: translateX(6px); background: rgba(255,255,255,.24); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .dot.red { background: #d90429; } .dot.orange { background: #f77f00; } .dot.green { background: #2a9d8f; }
+  .credits { opacity: .7; font-size: .8em; margin-top: 14px; }
+    .windnote { position: absolute; z-index: 1100; left: 12px; top: 76px; pointer-events: none; font-size: .72em;
+    background: rgba(25,20,45,.78); padding: 3px 12px; border-radius: 999px; text-shadow: none; }
+  .windnote:empty { display: none; }
+  .t-particles { background: linear-gradient(135deg, #0f2a5c, #2fb36a); }
 </style>
 {% endblock %}
 
 {% block content %}
   <h1>Storm Map</h1>
-  <span class="live"><i></i> LIVE &middot; updated <span id="stamp">now</span></span>
-  <p class="note">Pick a layer in the box on the map. Low pressure and heavy rain are where storms form.</p>
+  <span class="live"><i></i> LIVE &middot; map colors show conditions now &middot; updated <span id="stamp">now</span></span>
 
   <div class="jump">
     <button data-lat="12.5" data-lon="122" data-z="5">Philippines</button>
@@ -39,12 +120,84 @@
     <button data-lat="15" data-lon="0" data-z="2">World</button>
   </div>
 
-  <div id="map"></div>
+  <div class="mapwrap">
+    <div id="map"></div>
+
+    <div class="topbar"><div class="readout" id="readout"><small>Tap the map</small><strong>Point forecast</strong></div></div>
+        
+        <div class="windnote" id="windnote"></div>
+    <button class="fab" id="fab" title="Layers">&#9776;</button>
+
+    <div class="panel" id="panel">
+      <div class="panel-head"><strong>Layers</strong><span class="x" id="closePanel">&times;</span></div>
+
+      <h3>Weather layers</h3>
+      <div class="tiles">
+        <div class="tile" data-kind="wx" data-key="wind"><div class="thumb t-wind">&#128168;</div><span class="lbl">Wind</span></div>
+        <div class="tile" data-kind="wx" data-key="rain"><div class="thumb t-rain">&#127783;</div><span class="lbl">Rain, storms</span></div>
+        <div class="tile" data-kind="wx" data-key="clouds"><div class="thumb t-clouds">&#9729;</div><span class="lbl">Clouds</span></div>
+        <div class="tile" data-kind="wx" data-key="temp"><div class="thumb t-temp">&#127777;</div><span class="lbl">Temperature</span></div>
+        <div class="tile" data-kind="wx" data-key="pressure"><div class="thumb t-press">&#9878;</div><span class="lbl">Pressure</span></div>
+        <div class="tile" data-kind="wx" data-key="none"><div class="thumb t-none">&#10005;</div><span class="lbl">Empty map</span></div>
+      </div>
+
+      <div id="stormSection">
+        <h3>Storm tracker</h3>
+        <div class="tiles">
+          <div class="tile" id="stormTile" data-kind="storm" data-key="storm">
+            <div class="thumb t-storm">&#127744;<span class="count" id="stormCount">...</span></div>
+            <span class="lbl">Storm names</span>
+          </div>
+        </div>
+      </div>
+
+      <h3>Map style</h3>
+      <div class="tiles">
+        <div class="tile" data-kind="base" data-key="plain"><div class="thumb t-plain"></div><span class="lbl">Plain</span></div>
+        <div class="tile" data-kind="base" data-key="street"><div class="thumb t-street"></div><span class="lbl">Street</span></div>
+        <div class="tile" data-kind="base" data-key="satellite"><div class="thumb t-sat"></div><span class="lbl">Satellite</span></div>
+        
+        <div class="tile" data-kind="base" data-key="dark"><div class="thumb t-dark"></div><span class="lbl">Dark</span></div>
+      </div>
+
+      <h3>Display on map</h3>
+      <div class="tiles">
+        <div class="tile" data-kind="fx" data-key="particles"><div class="thumb t-particles">&#8776;</div><span class="lbl">Wind particles</span></div>
+      </div>
+
+    <div class="scale" id="scale">
+      <div class="unit"></div>
+      <div class="bar"></div>
+      <div class="ticks"></div>
+    </div>
+  </div>
+
+  <div class="card tl">
+    <div class="tl-head">
+      <button id="play" title="Play / pause">&#9654;</button>
+      <div><strong id="ptTitle">Tap the map to see a point forecast</strong><br /><small id="ptWhen"></small></div>
+    </div>
+    <input type="range" id="slider" min="0" max="0" value="0" />
+    <div class="strip" id="strip"></div>
+    <div class="detail" id="ptDetail"></div>
+    <small class="hint">The slider steps through the forecast for the pin (every 3 hours, next 5 days). Bars show the chance of rain.</small>
+  </div>
+
+  <div class="card storm-list" id="stormCard" style="text-align:left">
+    <h2>&#127744; Active tropical storms</h2>
+    <div id="storm-list">Loading storms...</div>
+    <small style="opacity:.75">Source: GDACS (NOAA / JTWC data). Red is the highest alert level, then orange, then green.</small>
+  </div>
+
+    <p class="credits">Weather maps and forecast: OpenWeather &middot; Base maps: Esri &middot; Storm data: GDACS &middot; Wind animation: <a href="https://open-meteo.com/" style="color:#fff">Open-Meteo.com</a> (CC BY 4.0)</p>
+
   {{ map_config|json_script:"map-config" }}
 
-    <script>
+  <script>
     const cfg = JSON.parse(document.getElementById("map-config").textContent);
-    const map = L.map("map", { minZoom: 2 }).setView([cfg.lat, cfg.lon], cfg.zoom);
+    const map = L.map("map", { minZoom: 2, zoomControl: false, attributionControl: false })
+      .setView([cfg.lat, cfg.lon], cfg.zoom);
+    L.control.zoom({ position: "topright" }).addTo(map);
 
     // Panes keep the order right: base map < weather < English labels
     map.createPane("weatherPane");
@@ -53,102 +206,433 @@
     map.getPane("labelsPane").style.zIndex = 450;
     map.getPane("labelsPane").style.pointerEvents = "none";
 
-    // ---------- map styles (all free, no key) ----------
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    // ---------- map styles (free, no key) ----------
     const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
-    const esri = (path, opts) => L.tileLayer(ESRI + path + "/MapServer/tile/{z}/{y}/{x}",
-      Object.assign({ attribution: "Tiles &copy; Esri", maxZoom: 10 }, opts || {}));
-    const labels = (path) => esri(path, { pane: "labelsPane", attribution: "" });
-
-    const baseMaps = {
-      "Plain (light)": L.layerGroup([
-        esri("Canvas/World_Light_Gray_Base"),
-        labels("Canvas/World_Light_Gray_Reference")
-      ]),
-      "Street map": L.layerGroup([
-        esri("World_Street_Map")
-      ]),
-      "Satellite": L.layerGroup([
-        esri("World_Imagery"),
-        labels("Reference/World_Boundaries_and_Places")
-      ]),
-      "Dark": L.layerGroup([
-        esri("Canvas/World_Dark_Gray_Base"),
-        labels("Canvas/World_Dark_Gray_Reference")
-      ])
+    const esri = (path, opts) => L.tileLayer(ESRI + path + "/MapServer/tile/{z}/{y}/{x}", Object.assign({ maxZoom: 10 }, opts || {}));
+    const labels = path => esri(path, { pane: "labelsPane" });
+    const BASES = {
+      plain: L.layerGroup([esri("Canvas/World_Light_Gray_Base"), labels("Canvas/World_Light_Gray_Reference")]),
+      street: L.layerGroup([esri("World_Street_Map")]),
+      satellite: L.layerGroup([esri("World_Imagery"), labels("Reference/World_Boundaries_and_Places")]),
+      dark: L.layerGroup([esri("Canvas/World_Dark_Gray_Base"), labels("Canvas/World_Dark_Gray_Reference")])
     };
-    baseMaps["Plain (light)"].addTo(map);
-
-    // ---------- weather layers ----------
-    const layer = (name, opacity) =>
-      L.tileLayer("/tiles/" + name + "/{z}/{x}/{y}.png", { pane: "weatherPane", opacity: opacity, maxZoom: 10 });
-
-    const layers = {
-      "Rain & storms": layer("precipitation_new", 1),
-      "Clouds": layer("clouds_new", 0.85),
-      "Wind": layer("wind_new", 0.85),
-      "Temperature": layer("temp_new", 0.75),
-      "Pressure": layer("pressure_new", 0.75)
-    };
-    layers["Rain & storms"].addTo(map);
-
-    // Two separate boxes: map style on top, weather layer below
-    L.control.layers(baseMaps, null, { collapsed: false, position: "topright" }).addTo(map);
-    L.control.layers(layers, null, { collapsed: false, position: "topright" }).addTo(map);
-
-    // ---------- legend (colors are close approximations of OpenWeather's scales) ----------
-    const LEGENDS = {
-      "Rain & storms": { title: "Rain intensity", rows: [
-        ["#9b9bd8", "Light rain (about 1 mm/h)"],
-        ["#6a6ae0", "Moderate (about 5 mm/h)"],
-        ["#5050e1", "Heavy (10+ mm/h)"],
-        ["#1414ff", "Storm / extreme (50+ mm/h)"] ] },
-      "Clouds": { title: "Cloud cover", rows: [
-        ["rgba(255,255,255,.3)", "Few clouds (about 25%)"],
-        ["rgba(255,255,255,.6)", "Partly cloudy (50%)"],
-        ["rgba(255,255,255,.85)", "Mostly cloudy (75%)"],
-        ["#ffffff", "Overcast (100%)"] ] },
-      "Wind": { title: "Wind speed", rows: [
-        ["#eecece", "Breeze (about 5 m/s)"],
-        ["#b364bc", "Strong wind (15 m/s)"],
-        ["#3f213b", "Gale (25 m/s)"],
-        ["#744cac", "Storm force (50+ m/s)"] ] },
-      "Temperature": { title: "Temperature", rows: [
-        ["#8657db", "-55 \u00B0C"], ["#208cec", "-45 \u00B0C"], ["#23dddd", "-30 \u00B0C"],
-        ["#c2ff28", "-20 \u00B0C"], ["#fff028", "-10 \u00B0C"], ["#ffc228", "25 \u00B0C"], ["#fc8014", "40 \u00B0C and above"] ] },
-      "Pressure": { title: "Air pressure (hPa)", rows: [
-        ["#0073ff", "940 \u2013 very low (storm)"], ["#4bd0d6", "980 \u2013 low"], ["#8de7c7", "1000"],
-        ["#b0f720", "1010 \u2013 normal"], ["#f0b800", "1020"], ["#fb5515", "1040 \u2013 high"], ["#c60000", "1080 \u2013 very high"] ] }
-    };
-
-    const legend = L.control({ position: "bottomleft" });
-    legend.onAdd = function () { this._div = L.DomUtil.create("div", "legend"); return this._div; };
-    legend.update = function (name) {
-      const d = LEGENDS[name];
-      this._div.innerHTML = "<h4>" + d.title + "</h4>" +
-        d.rows.map(r => '<div class="row"><i style="background:' + r[0] + '"></i>' + r[1] + "</div>").join("") +
-        "<small>Colors blend between these steps</small>";
-    };
-    legend.addTo(map);
-
-    function setLook(name) {
-      map.getPane("weatherPane").style.filter = name === "Rain & storms" ? "saturate(1.8)" : "none";
-      legend.update(name);
+    let currentBase = null;
+    function setBase(key) {
+      if (currentBase) map.removeLayer(BASES[currentBase]);
+      BASES[key].addTo(map);
+      currentBase = key;
+      markTiles();
     }
-    setLook("Rain & storms");
 
-    // Only weather layers change the legend; map styles are ignored here
-    map.on("baselayerchange", e => { if (LEGENDS[e.name]) setLook(e.name); });
+    // ---------- weather layers + color scales (approximate OpenWeather colors) ----------
+    const WX = {
+      wind: { tile: "wind_new", opacity: .85, title: "Wind", unit: "km/h", stops: [
+        ["rgba(255,255,255,.15)", "0"], ["#eecece", "18"], ["#b364bc", "54"], ["#3f213b", "90"], ["#744cac", "180+"] ] },
+      rain: { tile: "precipitation_new", opacity: 1, title: "Rain intensity", unit: "mm per hour", stops: [
+        ["rgba(155,155,216,.4)", "0"], ["#9b9bd8", "1 light"], ["#6a6ae0", "5 moderate"], ["#5050e1", "10 heavy"], ["#1414ff", "50+ extreme"] ] },
+      clouds: { tile: "clouds_new", opacity: .85, title: "Cloud cover", unit: "%", stops: [
+        ["rgba(255,255,255,0)", "0"], ["rgba(255,255,255,.4)", "25"], ["rgba(255,255,255,.7)", "50"], ["rgba(255,255,255,.9)", "75"], ["#ffffff", "100"] ] },
+      temp: { tile: "temp_new", opacity: .75, title: "Temperature", unit: "\u00B0C", stops: [
+        ["#8257db", "-30"], ["#208cec", "-20"], ["#20c4e8", "-10"], ["#23dddd", "0"], ["#c2ff28", "10"], ["#fff028", "20"], ["#ffc228", "25"], ["#fc8014", "30+"] ] },
+      pressure: { tile: "pressure_new", opacity: .75, title: "Air pressure", unit: "hPa (low = storm)", stops: [
+        ["#0073ff", "940"], ["#00aaff", "960"], ["#4bd0d6", "980"], ["#8de7c7", "1000"], ["#b0f720", "1010"], ["#f0b800", "1020"], ["#fb5515", "1040"], ["#c60000", "1080"] ] }
+    };
+    const wxLayers = {};
+    let currentWx = null;
+
+    function setWeather(key) {
+      if (currentWx && wxLayers[currentWx]) map.removeLayer(wxLayers[currentWx]);
+      currentWx = key;
+      if (key) {
+        const c = WX[key];
+        wxLayers[key] = wxLayers[key] || L.tileLayer("/tiles/" + c.tile + "/{z}/{x}/{y}.png",
+          { pane: "weatherPane", opacity: c.opacity, maxZoom: 10 });
+        wxLayers[key].addTo(map);
+      }
+      map.getPane("weatherPane").style.filter = key === "rain" ? "saturate(1.8)" : "none";
+      renderScale(); markTiles(); renderReadout();
+    }
+
+    function renderScale() {
+      const box = document.getElementById("scale");
+      if (!currentWx) { box.style.display = "none"; return; }
+      const c = WX[currentWx];
+      box.style.display = "block";
+      box.querySelector(".unit").textContent = c.title + " (" + c.unit + ")";
+      box.querySelector(".bar").style.background = "linear-gradient(to right," + c.stops.map(s => s[0]).join(",") + ")";
+      box.querySelector(".ticks").innerHTML = c.stops.map(s => "<span>" + esc(s[1]) + "</span>").join("");
+    }
+
+    // ---------- storm names (optional; hides itself if /api/storms/ is missing) ----------
+    const stormLayer = L.featureGroup().addTo(map);
+    function toggleStorms() {
+      if (map.hasLayer(stormLayer)) { map.removeLayer(stormLayer); }
+      else {
+        stormLayer.addTo(map);
+        const b = stormLayer.getBounds();
+        if (b.isValid()) map.flyToBounds(b.pad(0.5), { maxZoom: 6, duration: 1.4 });
+      }
+      markTiles();
+    }
+
+    function loadStorms() {
+      const list = document.getElementById("storm-list");
+      const count = document.getElementById("stormCount");
+      fetch("/api/storms/")
+        .then(r => { if (!r.ok) throw new Error("no storms api"); return r.json(); })
+        .then(data => {
+          stormLayer.clearLayers();
+          if (!data.ok) { list.textContent = "Storm data is unavailable right now."; count.textContent = "?"; return; }
+          count.textContent = data.storms.length + " active";
+          count.style.background = data.storms.length ? "#d90429" : "#555";
+          if (!data.storms.length) { list.textContent = "No active tropical storms or typhoons right now."; return; }
+          list.innerHTML = "";
+          data.storms.forEach(s => {
+            const wind = s.wind_kmh ? Math.round(s.wind_kmh) + " km/h" : "n/a";
+            const icon = L.divIcon({
+              className: "storm-icon", iconSize: null,
+              html: '<div class="storm-pin lvl-' + esc(s.level) + '"><span class="eye">&#127744;</span>' + esc(s.name) + "</div>"
+            });
+            const popup = "<b>" + esc(s.name) + "</b><br>" + esc(s.text || "Tropical cyclone") +
+              "<br>Max wind: " + wind + (s.country ? "<br>Affects: " + esc(s.country) : "") +
+              (s.since ? "<br>Active since: " + esc(s.since) : "") + "<br>Alert level: " + esc(s.level);
+            L.marker([s.lat, s.lon], { icon: icon }).bindPopup(popup).addTo(stormLayer);
+
+            const row = document.createElement("div");
+            row.className = "storm-item";
+            row.innerHTML = '<span class="dot ' + esc(s.level) + '"></span><strong>' + esc(s.name) + "</strong>" +
+              "<small>" + esc(s.text || "Tropical cyclone") + " &middot; wind " + wind +
+              (s.country ? " &middot; " + esc(s.country) : "") + "</small>";
+            row.addEventListener("click", () => map.flyTo([s.lat, s.lon], 6, { duration: 1.4 }));
+            list.appendChild(row);
+          });
+        })
+        .catch(() => {
+          document.getElementById("stormSection").style.display = "none";
+          document.getElementById("stormCard").style.display = "none";
+        });
+    }
+
+    // ---------- layer panel ----------
+    const panel = document.getElementById("panel");
+    document.getElementById("fab").addEventListener("click", () => panel.classList.toggle("open"));
+    document.getElementById("closePanel").addEventListener("click", () => panel.classList.remove("open"));
+    panel.addEventListener("click", e => {
+      const t = e.target.closest(".tile");
+      if (!t) return;
+      const kind = t.dataset.kind, key = t.dataset.key;
+      if (kind === "wx") setWeather(key === "none" ? null : key);
+      else if (kind === "base") setBase(key);
+      else if (kind === "storm") toggleStorms();
+      else if (kind === "fx") toggleWind();
+    });
+    function markTiles() {
+      document.querySelectorAll(".tile").forEach(t => {
+        const k = t.dataset.kind, key = t.dataset.key;
+        let on = false;
+        if (k === "wx") on = key === "none" ? !currentWx : key === currentWx;
+        if (k === "base") on = key === currentBase;
+        if (k === "storm") on = map.hasLayer(stormLayer);
+        if (k === "fx") on = windOn;
+        t.classList.toggle("on", on);
+      });
+    }
+
+    // ---------- point forecast + timeline ----------
+    const compass = d => ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(d / 22.5) % 16];
+    const arrow = d => '<span style="display:inline-block;transform:rotate(' + (d + 90) + 'deg)">&rarr;</span>';
+    const stat = (l, v) => '<div class="st"><small>' + l + "</small><strong>" + v + "</strong></div>";
+    const slider = document.getElementById("slider");
+    const strip = document.getElementById("strip");
+    const playBtn = document.getElementById("play");
+    let pointData = null, sel = 0, pointMarker = null, timer = null;
+
+    function stopPlay() { clearInterval(timer); timer = null; playBtn.innerHTML = "&#9654;"; }
+
+    function loadPoint(lat, lon) {
+      if (pointMarker) map.removeLayer(pointMarker);
+      pointMarker = L.circleMarker([lat, lon], { radius: 9, color: "#fff", weight: 3, fillColor: "#ff2e63", fillOpacity: .95 }).addTo(map);
+      stopPlay();
+      document.getElementById("ptTitle").textContent = "Loading forecast...";
+      fetch("/api/point/?lat=" + lat.toFixed(3) + "&lon=" + lon.toFixed(3))
+        .then(r => { if (!r.ok) throw new Error("bad response"); return r.json(); })
+        .then(d => { pointData = d; sel = 0; renderPoint(); })
+        .catch(() => {
+          pointData = null; strip.innerHTML = ""; document.getElementById("ptDetail").innerHTML = "";
+          document.getElementById("ptTitle").textContent = "Forecast unavailable for this point. Try another spot.";
+          renderReadout();
+        });
+    }
+
+    function renderPoint() {
+      const d = pointData;
+      if (!d || !d.slots.length) return;
+      document.getElementById("ptTitle").textContent = d.name ? d.name + (d.country ? ", " + d.country : "") : "Selected point (open land or sea)";
+      slider.max = d.slots.length - 1;
+      strip.innerHTML = d.slots.map((s, i) => {
+        const dt = new Date(s.dt * 1000);
+        const first = i === 0 || dt.getDate() !== new Date(d.slots[i - 1].dt * 1000).getDate();
+        const day = first ? dt.toLocaleDateString([], { weekday: "short", day: "numeric" }) : "";
+        const hr = dt.toLocaleTimeString([], { hour: "numeric" });
+        return '<div class="cell' + (s.pop >= 40 || s.mm > 0 ? " wet" : "") + '" data-i="' + i + '">' +
+          "<small>" + esc(day) + "</small><b>" + esc(hr) + "</b>" +
+          '<img src="https://openweathermap.org/img/wn/' + encodeURIComponent(s.icon) + '.png" alt="" />' +
+          '<div class="barwrap"><i style="height:' + Math.min(100, s.pop) + '%"></i></div>' +
+          "<span>" + s.pop + "%</span></div>";
+      }).join("");
+      showSlot();
+    }
+
+    function showSlot() {
+      if (!pointData) return;
+      const s = pointData.slots[sel];
+      strip.querySelectorAll(".cell").forEach((c, i) => c.classList.toggle("sel", i === sel));
+      slider.value = sel;
+      document.getElementById("ptWhen").textContent =
+        new Date(s.dt * 1000).toLocaleString([], { weekday: "long", hour: "numeric", minute: "2-digit" }) + " (your local time)";
+      document.getElementById("ptDetail").innerHTML =
+        stat("Weather", esc(s.desc)) + stat("Temperature", s.temp + "\u00B0C") +
+        stat("Wind", s.wind_kmh + " km/h " + arrow(s.wind_deg) + " " + compass(s.wind_deg)) +
+        stat("Rain", s.pop + "% chance / " + s.mm + " mm") + stat("Clouds", s.clouds + "%") + stat("Pressure", s.pressure + " hPa");
+      const c = strip.children[sel];
+      if (c) strip.scrollTo({ left: c.offsetLeft - strip.clientWidth / 2 + c.clientWidth / 2, behavior: "smooth" });
+      renderReadout();
+    }
+
+    function renderReadout() {
+      const el = document.getElementById("readout");
+      if (!pointData || !pointData.slots.length) { el.innerHTML = "<small>Tap the map</small><strong>Point forecast</strong>"; return; }
+      const s = pointData.slots[sel];
+      const when = new Date(s.dt * 1000).toLocaleString([], { weekday: "short", hour: "numeric" });
+      let label = "Weather", val = esc(s.desc);
+      if (currentWx === "wind") { label = "Wind"; val = s.wind_kmh + " km/h " + arrow(s.wind_deg) + " " + compass(s.wind_deg); }
+      else if (currentWx === "rain") { label = "Rain"; val = s.pop + "% &middot; " + s.mm + " mm"; }
+      else if (currentWx === "clouds") { label = "Clouds"; val = s.clouds + "%"; }
+      else if (currentWx === "temp") { label = "Temperature"; val = s.temp + "\u00B0C"; }
+      else if (currentWx === "pressure") { label = "Pressure"; val = s.pressure + " hPa"; }
+      el.innerHTML = "<small>" + label + " &middot; " + esc(when) + "</small><strong>" + val + "</strong>";
+    }
+
+    map.on("click", e => { const p = e.latlng.wrap(); loadPoint(p.lat, p.lng); });
+    slider.addEventListener("input", () => { stopPlay(); sel = +slider.value; showSlot(); });
+    strip.addEventListener("click", e => {
+      const c = e.target.closest(".cell");
+      if (!c) return;
+      stopPlay(); sel = +c.dataset.i; showSlot();
+    });
+    playBtn.addEventListener("click", () => {
+      if (!pointData) return;
+      if (timer) { stopPlay(); return; }
+      playBtn.innerHTML = "&#10074;&#10074;";
+      timer = setInterval(() => { sel = (sel + 1) % pointData.slots.length; showSlot(); }, 800);
+    });
 
     // ---------- live refresh + quick jumps ----------
     const stamp = document.getElementById("stamp");
     const stampNow = () => { stamp.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
     stampNow();
-    setInterval(() => { Object.values(layers).forEach(l => l.redraw()); stampNow(); }, 600000);
+    setInterval(() => { Object.values(wxLayers).forEach(l => l.redraw()); stampNow(); loadStorms(); }, 600000);
 
     document.querySelectorAll(".jump button").forEach(b => b.addEventListener("click", () => {
       map.flyTo([+b.dataset.lat, +b.dataset.lon], +b.dataset.z, { duration: 1.6 });
     }));
 
-    if (cfg.marker) { L.marker([cfg.lat, cfg.lon]).addTo(map); }
+        // ---------- animated wind particles (Open-Meteo, free, no key) ----------
+    map.createPane("windPane");
+    const windPane = map.getPane("windPane");
+    windPane.style.zIndex = 350;
+    windPane.style.pointerEvents = "none";
+    const cv = document.createElement("canvas");
+    cv.style.position = "absolute";
+    windPane.appendChild(cv);
+    const ctx = cv.getContext("2d");
+    const note = document.getElementById("windnote");
+
+    const CELL = 14;        // pixels per wind-field cell
+    const SPEED_K = 0.05;   // pixels per frame for each km/h (raise it for faster particles)
+    const BUCKETS = [{ a: 0.5, w: 1.1 }, { a: 0.75, w: 1.5 }, { a: 1, w: 2 }];
+    let windOn = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let grid = null, field = null, parts = [], rafId = null, paused = false;
+    let fetchTimer = null, fetchSeq = 0, W = 0, H = 0;
+    const out = { u: 0, v: 0 };
+
+    function placeCanvas() { L.DomUtil.setPosition(cv, map.containerPointToLayerPoint([0, 0])); }
+
+    function newParticle() {
+      return { x: Math.random() * W, y: Math.random() * H, age: Math.floor(Math.random() * 100), max: 70 + Math.random() * 80 };
+    }
+    function respawn(p) { p.x = Math.random() * W; p.y = Math.random() * H; p.age = 0; p.max = 70 + Math.random() * 80; }
+
+    function sizeCanvas() {
+      const s = map.getSize(); W = s.x; H = s.y;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      cv.width = W * dpr; cv.height = H * dpr;
+      cv.style.width = W + "px"; cv.style.height = H + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      placeCanvas();
+      const n = Math.max(300, Math.min(1600, Math.round(W * H / 1500)));
+      parts = Array.from({ length: n }, newParticle);
+    }
+
+    // bilinear lookup in the downloaded lat/lon grid (u = east, v = north, in km/h)
+    function sampleGrid(lat, lon) {
+      const g = grid;
+      if (!g || lat < g.south || lat > g.north) return null;
+      let x = lon - g.west;
+      if (g.span >= 360) x = ((x % 360) + 360) % 360;
+      if (x < 0 || x > g.span) return null;
+      const fx = x / g.dlon, fy = (lat - g.south) / g.dlat;
+      const c0 = Math.min(Math.floor(fx), g.cols - 2), r0 = Math.min(Math.floor(fy), g.rows - 2);
+      const tx = fx - c0, ty = fy - r0;
+      const a = r0 * g.cols + c0, b = a + 1, c = a + g.cols, d = c + 1;
+      const u = (g.u[a] * (1 - tx) + g.u[b] * tx) * (1 - ty) + (g.u[c] * (1 - tx) + g.u[d] * tx) * ty;
+      const v = (g.v[a] * (1 - tx) + g.v[b] * tx) * (1 - ty) + (g.v[c] * (1 - tx) + g.v[d] * tx) * ty;
+      return (u !== u || v !== v) ? null : [u, v];
+    }
+
+    // the same wind, resampled onto a screen-pixel grid so each particle lookup is cheap
+    function buildField() {
+      if (!grid) { field = null; return; }
+      const fw = Math.ceil(W / CELL) + 2, fh = Math.ceil(H / CELL) + 2;
+      const U = new Float32Array(fw * fh), V = new Float32Array(fw * fh);
+      for (let j = 0; j < fh; j++) {
+        for (let i = 0; i < fw; i++) {
+          const ll = map.containerPointToLatLng([i * CELL, j * CELL]);
+          const w = sampleGrid(ll.lat, ll.lng);
+          const k = j * fw + i;
+          if (w) { U[k] = w[0]; V[k] = w[1]; } else { U[k] = NaN; V[k] = NaN; }
+        }
+      }
+      field = { U: U, V: V, fw: fw, fh: fh };
+    }
+
+    function windAt(x, y) {
+      const f = field;
+      if (!f) return false;
+      const fx = x / CELL, fy = y / CELL, i0 = Math.floor(fx), j0 = Math.floor(fy);
+      if (i0 < 0 || j0 < 0 || i0 >= f.fw - 1 || j0 >= f.fh - 1) return false;
+      const tx = fx - i0, ty = fy - j0, a = j0 * f.fw + i0, b = a + 1, c = a + f.fw, d = c + 1;
+      const u = (f.U[a] * (1 - tx) + f.U[b] * tx) * (1 - ty) + (f.U[c] * (1 - tx) + f.U[d] * tx) * ty;
+      const v = (f.V[a] * (1 - tx) + f.V[b] * tx) * (1 - ty) + (f.V[c] * (1 - tx) + f.V[d] * tx) * ty;
+      if (u !== u || v !== v) return false;
+      out.u = u; out.v = v;
+      return true;
+    }
+
+    function frame() {
+      rafId = requestAnimationFrame(frame);
+      if (paused || !field) return;
+      // fade old trails
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = "rgba(0,0,0,0.07)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = "source-over";
+
+      const light = currentBase === "plain" || currentBase === "street";
+      const rgb = light ? "20,28,70" : "255,255,255";   // dark lines on light maps, white on dark/satellite
+      const segs = [[], [], []];
+      for (let n = 0; n < parts.length; n++) {
+        const p = parts[n];
+        if (++p.age > p.max || !windAt(p.x, p.y)) { respawn(p); continue; }
+        const nx = p.x + out.u * SPEED_K, ny = p.y - out.v * SPEED_K;
+        const sp = Math.sqrt(out.u * out.u + out.v * out.v);
+        segs[sp < 15 ? 0 : sp < 40 ? 1 : 2].push(p.x, p.y, nx, ny);
+        p.x = nx; p.y = ny;
+      }
+      ctx.lineCap = "round";
+      for (let i = 0; i < 3; i++) {
+        const s = segs[i];
+        if (!s.length) continue;
+        ctx.beginPath();
+        for (let k = 0; k < s.length; k += 4) { ctx.moveTo(s[k], s[k + 1]); ctx.lineTo(s[k + 2], s[k + 3]); }
+        ctx.strokeStyle = "rgba(" + rgb + "," + BUCKETS[i].a + ")";
+        ctx.lineWidth = BUCKETS[i].w;
+        ctx.stroke();
+      }
+    }
+
+    function startWind() { if (windOn && !rafId) rafId = requestAnimationFrame(frame); }
+    function stopWind() { if (rafId) cancelAnimationFrame(rafId); rafId = null; ctx.clearRect(0, 0, W, H); }
+    function toggleWind() {
+      windOn = !windOn;
+      if (windOn) { loadWind(true); startWind(); } else { stopWind(); note.textContent = ""; }
+      markTiles();
+    }
+
+    // download wind for a grid of points covering the view (one request, about 100-170 points)
+    function loadWind(force) {
+      if (!windOn) return;
+      const view = map.getBounds(), z = map.getZoom();
+      if (!force && grid && grid.zoom === z && Date.now() - grid.time < 900000 &&
+          view.getSouth() >= grid.south && view.getNorth() <= grid.north &&
+          (grid.span >= 360 || (view.getWest() >= grid.west && view.getEast() <= grid.west + grid.span))) return;
+
+      const b = view.pad(0.15);
+      let west = b.getWest(), east = b.getEast();
+      const south = Math.max(-85, b.getSouth()), north = Math.min(85, b.getNorth());
+      if (east - west >= 360) { west = -180; east = 180; }
+      const span = east - west, cols = 14, dlon = span / (cols - 1);
+      const rows = Math.min(12, Math.max(6, Math.round((north - south) / dlon) + 1));
+      const dlat = (north - south) / (rows - 1);
+
+      const lats = [], lons = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          lats.push((south + r * dlat).toFixed(2));
+          const lo = west + c * dlon;
+          lons.push((((lo + 180) % 360 + 360) % 360 - 180).toFixed(2));
+        }
+      }
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=" + lats.join(",") + "&longitude=" + lons.join(",") +
+        "&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh";
+
+      const seq = ++fetchSeq;
+      note.textContent = "Loading wind...";
+      fetch(url)
+        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(data => {
+          if (seq !== fetchSeq) return;           // a newer request replaced this one
+          const list = Array.isArray(data) ? data : [data];
+          if (list.length !== rows * cols) throw new Error("unexpected response");
+          const u = new Float32Array(rows * cols), v = new Float32Array(rows * cols);
+          list.forEach((o, i) => {
+            const c = o.current || {};
+            if (c.wind_speed_10m == null || c.wind_direction_10m == null) { u[i] = NaN; v[i] = NaN; return; }
+            const rad = c.wind_direction_10m * Math.PI / 180;      // direction the wind comes FROM
+            u[i] = -c.wind_speed_10m * Math.sin(rad);
+            v[i] = -c.wind_speed_10m * Math.cos(rad);
+          });
+          grid = { west: west, span: span, south: south, north: north, cols: cols, rows: rows,
+                   dlon: dlon, dlat: dlat, u: u, v: v, zoom: z, time: Date.now() };
+          buildField();
+          note.textContent = "Wind animation \u00B7 " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          startWind();
+        })
+        .catch(err => {
+          if (seq !== fetchSeq) return;
+          note.textContent = /429/.test(err.message) ? "Wind data limit reached. Try again later." : "Wind animation unavailable right now";
+        });
+    }
+
+    map.on("move", placeCanvas);
+    map.on("zoomstart", () => { paused = true; ctx.clearRect(0, 0, W, H); });
+    map.on("zoomend", () => { paused = false; });
+    map.on("moveend", () => {
+      placeCanvas(); buildField();
+      clearTimeout(fetchTimer);
+      fetchTimer = setTimeout(() => loadWind(false), 700);
+    });
+    map.on("resize", () => { sizeCanvas(); buildField(); });
+
+    sizeCanvas();
+    if (windOn) { startWind(); loadWind(true); }
+
+    // ---------- start ----------
+    setBase("plain");
+    setWeather("wind");
+    loadStorms();
+    loadPoint(cfg.lat, cfg.lon);
   </script>
 {% endblock %}
