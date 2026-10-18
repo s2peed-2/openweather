@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+ <title>{% block title %}CyPulse Weather{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --glass: rgba(255,255,255,.14);
+      --line: rgba(255,255,255,.28);
+      --btn: linear-gradient(135deg, #ff7a18, #ff2e63);
+    }
+    body {
+      margin: 0; min-height: 100vh; color: #fff; overflow-x: hidden;
+      font-family: "Poppins", "Segoe UI", Arial, sans-serif;
+      background-attachment: fixed; background-size: 200% 200%;
+      animation: drift 20s ease infinite;
+      text-shadow: 0 1px 8px rgba(0,0,0,.18);
+    }
+    @keyframes drift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+    body.default     { background-image: linear-gradient(135deg, #1e1b4b, #7c3aed, #ec4899); }
+    body.clear-day   { background-image: linear-gradient(135deg, #ff9a3c, #ff5e7e, #c471f5, #fa71cd); }
+    body.clear-night { background-image: linear-gradient(135deg, #0b1026, #2d1b69, #7b2cbf, #c026d3); }
+    body.clouds      { background-image: linear-gradient(135deg, #3a4a63, #5f7c8a, #8e9eab); }
+    body.rain        { background-image: linear-gradient(135deg, #0f2027, #14606e, #2bc0a4); }
+    body.storm       { background-image: linear-gradient(135deg, #0d0221, #2d0a5e, #6a1b9a, #c2185b); }
+    body.snow        { background-image: linear-gradient(135deg, #5b86e5, #74ebd5, #9face6); }
+    body.mist        { background-image: linear-gradient(135deg, #4b5563, #7b8794, #a8b3c4); }
+
+    /* ---------- weather effects ---------- */
+    #fx { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+    .drop { position: absolute; top: -70px; width: 2px; height: 60px;
+      background: linear-gradient(transparent, rgba(255,255,255,.75));
+      animation: fall linear infinite; }
+    @keyframes fall { to { transform: translateY(115vh); } }
+    .flake { position: absolute; top: -12px; border-radius: 50%; background: #fff;
+      animation: snowfall linear infinite; }
+    @keyframes snowfall { to { transform: translate(60px, 115vh); } }
+    .star { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff;
+      animation: twinkle ease-in-out infinite; }
+    @keyframes twinkle { 0%,100% { opacity: .15; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.5); } }
+    .cloud { position: absolute; left: -320px; height: 70px; border-radius: 100px;
+      background: rgba(255,255,255,.2); filter: blur(7px); animation: cloudmove linear infinite; }
+    @keyframes cloudmove { to { transform: translateX(calc(100vw + 700px)); } }
+    .sun { position: absolute; top: -110px; right: -90px; width: 380px; height: 380px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,248,176,.95), rgba(255,220,100,.35) 45%, transparent 70%);
+      animation: sunpulse 5s ease-in-out infinite; }
+    @keyframes sunpulse { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.12); opacity: 1; } }
+    .flash { position: absolute; inset: 0; background: #fff; opacity: 0; animation: lightning 7s infinite; }
+    @keyframes lightning {
+      0%,90%,100% { opacity: 0; } 91% { opacity: .55; } 92% { opacity: 0; } 94% { opacity: .35; } 95% { opacity: 0; }
+    }
+
+    /* ---------- layout ---------- */
+    nav, main { position: relative; z-index: 1; }
+    nav {
+      position: sticky; top: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+      padding: 12px 28px; background: rgba(20,10,40,.28);
+      backdrop-filter: blur(14px); border-bottom: 1px solid var(--line);
+    }
+    .brand { font-size: 1.35em; font-weight: 700; letter-spacing: .5px; display: flex; align-items: center; gap: 8px; }
+    .brand .logo { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+      background: var(--btn); box-shadow: 0 0 18px rgba(255,46,99,.7); animation: glow 2.5s ease-in-out infinite; }
+    @keyframes glow { 0%,100% { box-shadow: 0 0 10px rgba(255,46,99,.5); } 50% { box-shadow: 0 0 24px rgba(255,122,24,.9); } }
+    .nav-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    #clock { font-size: .85em; opacity: .85; margin-right: 10px; }
+    nav a.link {
+      color: #fff; text-decoration: none; padding: 8px 18px; border-radius: 999px;
+      transition: background .2s, transform .2s;
+    }
+    nav a.link:hover { background: rgba(255,255,255,.22); transform: translateY(-2px); }
+    nav a.link.active { background: var(--btn); font-weight: 600; box-shadow: 0 4px 14px rgba(255,46,99,.4); }
+
+    main { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; text-align: center; }
+    .card {
+      background: var(--glass); backdrop-filter: blur(14px);
+      border: 1px solid var(--line); border-radius: 26px;
+      padding: 30px; margin-top: 24px; box-shadow: 0 14px 40px rgba(0,0,0,.25);
+      animation: fadeup .7s ease both;
+    }
+    @keyframes fadeup { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+    form { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+    input[type=text] {
+      padding: 13px 20px; border-radius: 999px; border: none; min-width: 250px;
+      font-family: inherit; font-size: 1em; outline: none; box-shadow: 0 6px 18px rgba(0,0,0,.2);
+    }
+    input[type=text]:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.6); }
+    button, .btn {
+      padding: 13px 26px; border-radius: 999px; border: none; cursor: pointer;
+      background: var(--btn); color: #fff; font-weight: 600; font-family: inherit;
+      font-size: 1em; text-decoration: none; display: inline-block;
+      box-shadow: 0 6px 18px rgba(255,46,99,.4); transition: transform .2s, box-shadow .2s;
+    }
+    button:hover, .btn:hover { transform: translateY(-3px) scale(1.03); box-shadow: 0 10px 26px rgba(255,46,99,.55); }
+    .chips { margin-top: 14px; }
+    .chips a {
+      color: #fff; text-decoration: none; font-size: .88em; margin: 4px;
+      padding: 6px 16px; border-radius: 999px; background: rgba(255,255,255,.2);
+      border: 1px solid var(--line); display: inline-block; transition: transform .2s, background .2s;
+    }
+    .chips a:hover { background: rgba(255,255,255,.36); transform: translateY(-3px); }
+    .error { color: #ffe1e1; font-weight: 600; }
+    pre { white-space: pre-wrap; font-size: .8em; opacity: .85; }
+
+    @media (max-width: 600px) { nav { padding: 10px 14px; } #clock { display: none; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}default{% endblock %}">
+  <div id="fx"></div>
+  <nav>
+    <span class="brand"><span class="logo">&#9728;</span> CyPulse Weather</span>
+    <div class="nav-right">
+      <span id="clock"></span>
+      <a class="link {% if request.resolver_match.url_name == 'weather' %}active{% endif %}" href="{% url 'weather' %}">Weather</a>
+      <a class="link {% if request.resolver_match.url_name == 'storms' %}active{% endif %}" href="{% url 'storms' %}">Storm Map</a>
+    </div>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    (function () {
+      // live clock
+      const clock = document.getElementById("clock");
+      const tick = () => { clock.textContent = new Date().toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }); };
+      tick(); setInterval(tick, 30000);
+
+      // count-up numbers
+      document.querySelectorAll("[data-count]").forEach(function (el) {
+        const target = parseInt(el.dataset.count, 10);
+        if (isNaN(target)) return;
+        const start = performance.now(), dur = 900;
+        (function step(now) {
+          const p = Math.min((now - start) / dur, 1);
+          el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3)));
+          if (p < 1) requestAnimationFrame(step);
+        })(start);
+      });
+
+      // weather effects
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const fx = document.getElementById("fx"), cls = document.body.className;
+      const rnd = (a, b) => Math.random() * (b - a) + a;
+      function make(n, css, style) {
+        for (let i = 0; i < n; i++) {
+          const d = document.createElement("div");
+          d.className = css; style(d.style); fx.appendChild(d);
+        }
+      }
+      if (/\b(rain|storm)\b/.test(cls)) make(90, "drop", s => {
+        s.left = rnd(0, 100) + "%"; s.animationDuration = rnd(.5, 1.1) + "s";
+        s.animationDelay = rnd(0, 2) + "s"; s.opacity = rnd(.3, .75);
+      });
+      if (/\bstorm\b/.test(cls)) make(1, "flash", () => {});
+      if (/\bsnow\b/.test(cls)) make(60, "flake", s => {
+        const z = rnd(4, 10); s.width = z + "px"; s.height = z + "px";
+        s.left = rnd(0, 100) + "%"; s.animationDuration = rnd(5, 11) + "s";
+        s.animationDelay = rnd(0, 6) + "s"; s.opacity = rnd(.5, .95);
+      });
+      if (/\bclear-night\b/.test(cls)) make(80, "star", s => {
+        s.left = rnd(0, 100) + "%"; s.top = rnd(0, 100) + "%";
+        s.animationDuration = rnd(2, 5) + "s"; s.animationDelay = rnd(0, 4) + "s";
+      });
+      if (/\b(clouds|mist|rain|storm)\b/.test(cls)) make(5, "cloud", s => {
+        s.top = rnd(2, 55) + "%"; s.width = rnd(180, 360) + "px";
+        s.animationDuration = rnd(40, 80) + "s"; s.animationDelay = (-rnd(0, 60)) + "s";
+      });
+      if (/\bclear-day\b/.test(cls)) make(1, "sun", () => {});
+    })();
+  </script>
+</body>
+</html>

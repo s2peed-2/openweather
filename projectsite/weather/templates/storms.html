@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Storm Map{% endblock %}
+{% block body_class %}storm{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  h1 { margin: 0 0 6px; font-size: 2.2em; }
+  .live { display: inline-flex; align-items: center; gap: 8px; padding: 4px 14px; border-radius: 999px;
+    background: rgba(255,46,99,.25); border: 1px solid rgba(255,46,99,.6); font-size: .8em; font-weight: 600; }
+  .live i { width: 9px; height: 9px; border-radius: 50%; background: #ff2e63; animation: ping 1.4s infinite; }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(255,46,99,.8); } 100% { box-shadow: 0 0 0 12px rgba(255,46,99,0); } }
+  .note { opacity: .9; font-size: .95em; margin: 10px 0 0; }
+  .jump { margin: 16px 0 4px; }
+  .jump button { padding: 8px 18px; font-size: .9em; margin: 3px; }
+  #map { height: 68vh; border-radius: 22px; margin-top: 14px; border: 2px solid var(--line);
+    box-shadow: 0 14px 40px rgba(0,0,0,.35); }
+  .leaflet-control-layers { border-radius: 14px; padding: 6px 10px; font-family: inherit; }
+  .legend { background: rgba(20,10,45,.88); color: #fff; padding: 12px 14px; border-radius: 14px; font-size: .8em;
+    line-height: 1.6; min-width: 200px; border: 1px solid rgba(255,255,255,.25); text-align: left; text-shadow: none; }
+  .legend h4 { margin: 0 0 6px; font-size: 1.05em; }
+  .legend .row { display: flex; align-items: center; gap: 8px; }
+  .legend i { width: 22px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,.4); flex: none; }
+  .legend small { display: block; opacity: .7; margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+  <h1>Storm Map</h1>
+  <span class="live"><i></i> LIVE &middot; updated <span id="stamp">now</span></span>
+  <p class="note">Pick a layer in the box on the map. Low pressure and heavy rain are where storms form.</p>
+
+  <div class="jump">
+    <button data-lat="12.5" data-lon="122" data-z="5">Philippines</button>
+    <button data-lat="18" data-lon="140" data-z="4">Pacific Typhoon Belt</button>
+    <button data-lat="28" data-lon="105" data-z="3">Asia</button>
+    <button data-lat="15" data-lon="0" data-z="2">World</button>
+  </div>
+
+  <div id="map"></div>
+  {{ map_config|json_script:"map-config" }}
+
+    <script>
+    const cfg = JSON.parse(document.getElementById("map-config").textContent);
+    const map = L.map("map", { minZoom: 2 }).setView([cfg.lat, cfg.lon], cfg.zoom);
+
+    // Panes keep the order right: base map < weather < English labels
+    map.createPane("weatherPane");
+    map.getPane("weatherPane").style.zIndex = 300;
+    map.createPane("labelsPane");
+    map.getPane("labelsPane").style.zIndex = 450;
+    map.getPane("labelsPane").style.pointerEvents = "none";
+
+    // ---------- map styles (all free, no key) ----------
+    const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
+    const esri = (path, opts) => L.tileLayer(ESRI + path + "/MapServer/tile/{z}/{y}/{x}",
+      Object.assign({ attribution: "Tiles &copy; Esri", maxZoom: 10 }, opts || {}));
+    const labels = (path) => esri(path, { pane: "labelsPane", attribution: "" });
+
+    const baseMaps = {
+      "Plain (light)": L.layerGroup([
+        esri("Canvas/World_Light_Gray_Base"),
+        labels("Canvas/World_Light_Gray_Reference")
+      ]),
+      "Street map": L.layerGroup([
+        esri("World_Street_Map")
+      ]),
+      "Satellite": L.layerGroup([
+        esri("World_Imagery"),
+        labels("Reference/World_Boundaries_and_Places")
+      ]),
+      "Dark": L.layerGroup([
+        esri("Canvas/World_Dark_Gray_Base"),
+        labels("Canvas/World_Dark_Gray_Reference")
+      ])
+    };
+    baseMaps["Plain (light)"].addTo(map);
+
+    // ---------- weather layers ----------
+    const layer = (name, opacity) =>
+      L.tileLayer("/tiles/" + name + "/{z}/{x}/{y}.png", { pane: "weatherPane", opacity: opacity, maxZoom: 10 });
+
+    const layers = {
+      "Rain & storms": layer("precipitation_new", 1),
+      "Clouds": layer("clouds_new", 0.85),
+      "Wind": layer("wind_new", 0.85),
+      "Temperature": layer("temp_new", 0.75),
+      "Pressure": layer("pressure_new", 0.75)
+    };
+    layers["Rain & storms"].addTo(map);
+
+    // Two separate boxes: map style on top, weather layer below
+    L.control.layers(baseMaps, null, { collapsed: false, position: "topright" }).addTo(map);
+    L.control.layers(layers, null, { collapsed: false, position: "topright" }).addTo(map);
+
+    // ---------- legend (colors are close approximations of OpenWeather's scales) ----------
+    const LEGENDS = {
+      "Rain & storms": { title: "Rain intensity", rows: [
+        ["#9b9bd8", "Light rain (about 1 mm/h)"],
+        ["#6a6ae0", "Moderate (about 5 mm/h)"],
+        ["#5050e1", "Heavy (10+ mm/h)"],
+        ["#1414ff", "Storm / extreme (50+ mm/h)"] ] },
+      "Clouds": { title: "Cloud cover", rows: [
+        ["rgba(255,255,255,.3)", "Few clouds (about 25%)"],
+        ["rgba(255,255,255,.6)", "Partly cloudy (50%)"],
+        ["rgba(255,255,255,.85)", "Mostly cloudy (75%)"],
+        ["#ffffff", "Overcast (100%)"] ] },
+      "Wind": { title: "Wind speed", rows: [
+        ["#eecece", "Breeze (about 5 m/s)"],
+        ["#b364bc", "Strong wind (15 m/s)"],
+        ["#3f213b", "Gale (25 m/s)"],
+        ["#744cac", "Storm force (50+ m/s)"] ] },
+      "Temperature": { title: "Temperature", rows: [
+        ["#8657db", "-55 \u00B0C"], ["#208cec", "-45 \u00B0C"], ["#23dddd", "-30 \u00B0C"],
+        ["#c2ff28", "-20 \u00B0C"], ["#fff028", "-10 \u00B0C"], ["#ffc228", "25 \u00B0C"], ["#fc8014", "40 \u00B0C and above"] ] },
+      "Pressure": { title: "Air pressure (hPa)", rows: [
+        ["#0073ff", "940 \u2013 very low (storm)"], ["#4bd0d6", "980 \u2013 low"], ["#8de7c7", "1000"],
+        ["#b0f720", "1010 \u2013 normal"], ["#f0b800", "1020"], ["#fb5515", "1040 \u2013 high"], ["#c60000", "1080 \u2013 very high"] ] }
+    };
+
+    const legend = L.control({ position: "bottomleft" });
+    legend.onAdd = function () { this._div = L.DomUtil.create("div", "legend"); return this._div; };
+    legend.update = function (name) {
+      const d = LEGENDS[name];
+      this._div.innerHTML = "<h4>" + d.title + "</h4>" +
+        d.rows.map(r => '<div class="row"><i style="background:' + r[0] + '"></i>' + r[1] + "</div>").join("") +
+        "<small>Colors blend between these steps</small>";
+    };
+    legend.addTo(map);
+
+    function setLook(name) {
+      map.getPane("weatherPane").style.filter = name === "Rain & storms" ? "saturate(1.8)" : "none";
+      legend.update(name);
+    }
+    setLook("Rain & storms");
+
+    // Only weather layers change the legend; map styles are ignored here
+    map.on("baselayerchange", e => { if (LEGENDS[e.name]) setLook(e.name); });
+
+    // ---------- live refresh + quick jumps ----------
+    const stamp = document.getElementById("stamp");
+    const stampNow = () => { stamp.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
+    stampNow();
+    setInterval(() => { Object.values(layers).forEach(l => l.redraw()); stampNow(); }, 600000);
+
+    document.querySelectorAll(".jump button").forEach(b => b.addEventListener("click", () => {
+      map.flyTo([+b.dataset.lat, +b.dataset.lon], +b.dataset.z, { duration: 1.6 });
+    }));
+
+    if (cfg.marker) { L.marker([cfg.lat, cfg.lon]).addTo(map); }
+  </script>
+{% endblock %}
